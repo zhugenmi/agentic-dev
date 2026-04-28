@@ -139,7 +139,3 @@ curl -X DELETE http://localhost:8000/api/v1/sessions/test_session
 3. 提交代码
 4. 运行测试
 5. 提交Pull Request
-
-## 许可证
-
-MIT License

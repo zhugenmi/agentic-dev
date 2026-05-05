@@ -65,6 +65,36 @@
         .app-title {
             font-size: clamp(1.3rem, 2.5vw, 2rem);
             margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        .nav-tab {
+            padding: 6px 14px;
+            border-radius: 6px;
+            text-decoration: none;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .nav-tab:hover {
+            background: rgba(94, 161, 255, 0.1);
+            color: var(--accent);
+        }
+
+        .nav-tab.active {
+            background: rgba(94, 161, 255, 0.2);
+            color: var(--accent);
+            border-color: rgba(94, 161, 255, 0.3);
         }
 
         .app-subtitle {
@@ -496,7 +526,14 @@
     <div class="app-container">
         <header class="app-header">
             <span class="tag-line">LangGraph Workflow · Multi-Agent Collaboration</span>
-            <h1 class="app-title">🤖 LangGraph-Based Multi-Agent Programming Assistant</h1>
+            <h1 class="app-title">
+                🤖 LangGraph-Based Multi-Agent Programming Assistant
+                <nav class="nav-tabs">
+                    <a href="/" class="nav-tab active">任务执行</a>
+                    <a href="/chat" class="nav-tab">多轮对话</a>
+                    <a href="/cli" class="nav-tab">CLI</a>
+                </nav>
+            </h1>
             <p class="app-subtitle">Supervisor 规划 → Analyst 分析 → Implementer 生成 → Reviewer 审查 → Tester 测试，循环迭代直至通过。</p>
         </header>
 

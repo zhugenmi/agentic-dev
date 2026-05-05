@@ -4,6 +4,8 @@ from .skill_registry import skill_registry
 from .file_search_skill import FileSearchSkill
 from .code_analysis_skill import CodeAnalysisSkill
 from .model_router import ModelRouterSkill
+from .file_operations_skill import FileOperationsSkill, DirectoryOperationsSkill
+from .project_scaffold_skill import ProjectScaffoldSkill
 
 
 def initialize_skills():
@@ -27,6 +29,27 @@ def initialize_skills():
     skill_registry.register_skill(
         model_router_skill,
         allowed_agents=["supervisor", "repo_analyst", "implementer", "reviewer", "tester"]
+    )
+
+    # Register file operations skill
+    file_ops_skill = FileOperationsSkill()
+    skill_registry.register_skill(
+        file_ops_skill,
+        allowed_agents=["implementer", "repo_analyst"]
+    )
+
+    # Register directory operations skill
+    dir_ops_skill = DirectoryOperationsSkill()
+    skill_registry.register_skill(
+        dir_ops_skill,
+        allowed_agents=["implementer", "repo_analyst"]
+    )
+
+    # Register project scaffold skill
+    scaffold_skill = ProjectScaffoldSkill()
+    skill_registry.register_skill(
+        scaffold_skill,
+        allowed_agents=["repo_analyst", "implementer"]
     )
 
     print("Skills registered successfully!")

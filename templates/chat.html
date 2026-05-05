@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多轮对话 - LangGraph 多Agent编程助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #070b14;
+            --bg-panel: #101a2e;
+            --bg-card: #171f33;
+            --text-primary: #f1f5ff;
+            --text-secondary: #a9b8d6;
+            --text-muted: #8290ad;
+            --accent: #5ea1ff;
+            --accent-2: #7d6bff;
+            --success: #2ec987;
+            --warning: #f4a844;
+            --error: #ff6078;
+            --border: rgba(173, 197, 255, 0.22);
+            --user-msg-bg: rgba(94, 161, 255, 0.15);
+            --assistant-msg-bg: rgba(125, 107, 255, 0.15);
+        }
+
+        body {
+            font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.55;
+        }
+
+        .app-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 16px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--bg-panel);
+            margin-bottom: 12px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .header-subtitle {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 8px;
+        }
+
+        .nav-link {
+            padding: 6px 12px;
+            border-radius: 6px;
+            text-decoration: none;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .nav-link:hover {
+            background: rgba(94, 161, 255, 0.1);
+            color: var(--accent);
+        }
+
+        .nav-link.active {
+            background: rgba(94, 161, 255, 0.2);
+            color: var(--accent);
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            gap: 12px;
+            min-height: 0;
+        }
+
+        .chat-panel {
+            flex: 1;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--bg-panel);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .session-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .session-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: rgba(94, 161, 255, 0.15);
+            color: var(--accent);
+            font-size: 0.75rem;
+        }
+
+        .chat-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn-icon {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .btn-icon:hover {
+            background: rgba(94, 161, 255, 0.1);
+            color: var(--accent);
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: var(--user-msg-bg);
+            border: 1px solid rgba(94, 161, 255, 0.3);
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: var(--assistant-msg-bg);
+            border: 1px solid rgba(125, 107, 255, 0.3);
+        }
+
+        .message.system {
+            align-self: center;
+            background: rgba(46, 201, 135, 0.1);
+            border: 1px solid rgba(46, 201, 135, 0.3);
+            color: var(--success);
+            font-size: 0.85rem;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .message-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+        }
+
+        .message.user .message-avatar {
+            background: var(--accent);
+        }
+
+        .message.assistant .message-avatar {
+            background: var(--accent-2);
+        }
+
+        .message-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .message-content {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .message-content code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 0.85rem;
+        }
+
+        .message-content pre {
+            background: #0a1123;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+
+        .message-content pre code {
+            background: transparent;
+            padding: 0;
+        }
+
+        .context-panel {
+            width: 300px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--bg-panel);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-section {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-section:last-child {
+            border-bottom: none;
+        }
+
+        .panel-header {
+            padding: 10px 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: rgba(0, 0, 0, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-content {
+            padding: 10px 12px;
+            font-size: 0.8rem;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .context-item {
+            padding: 6px 8px;
+            border-radius: 4px;
+            margin-bottom: 4px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .context-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .context-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+        }
+
+        .input-area {
+            padding: 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
+        .message-input {
+            width: 100%;
+            min-height: 44px;
+            max-height: 150px;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font: inherit;
+            resize: none;
+        }
+
+        .message-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .message-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .send-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .send-btn:hover {
+            opacity: 0.9;
+            transform: scale(1.02);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .typing-indicator {
+            display: none;
+            padding: 8px 16px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .typing-indicator.active {
+            display: block;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .quick-commands {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            padding: 8px 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        .quick-cmd {
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: rgba(94, 161, 255, 0.1);
+            border: 1px solid rgba(94, 161, 255, 0.2);
+            color: var(--accent);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .quick-cmd:hover {
+            background: rgba(94, 161, 255, 0.2);
+        }
+
+        @media (max-width: 900px) {
+            .context-panel { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <div class="header-left">
+                <div>
+                    <div class="header-title">💬 多轮对话</div>
+                    <div class="header-subtitle">LangGraph 多Agent编程助手</div>
+                </div>
+            </div>
+            <nav class="nav-links">
+                <a href="/" class="nav-link">任务执行</a>
+                <a href="/chat" class="nav-link active">多轮对话</a>
+            </nav>
+        </header>
+
+        <div class="main-content">
+            <section class="chat-panel">
+                <div class="chat-header">
+                    <div class="session-info">
+                        <span class="session-badge" id="session-id">新会话</span>
+                        <span id="turn-count">0 条消息</span>
+                    </div>
+                    <div class="chat-actions">
+                        <button class="btn-icon" onclick="clearHistory()">🗑️ 清除</button>
+                        <button class="btn-icon" onclick="loadHistory()">📜 历史</button>
+                    </div>
+                </div>
+
+                <div class="messages-container" id="messages">
+                    <div class="empty-state" id="empty-state">
+                        <div class="empty-icon">🤖</div>
+                        <p>开始对话吧！</p>
+                        <p style="font-size: 0.85rem; margin-top: 8px;">
+                            输入编程问题，助手会帮你分析代码、生成代码、审查和测试
+                        </p>
+                    </div>
+                </div>
+
+                <div class="typing-indicator" id="typing-indicator">
+                    <span class="loading-spinner"></span>
+                    <span>助手正在思考...</span>
+                </div>
+
+                <div class="input-area">
+                    <div class="input-wrapper">
+                        <textarea
+                            id="message-input"
+                            class="message-input"
+                            placeholder="输入你的问题或任务描述... (Enter 发送, Shift+Enter 换行)"
+                            rows="1"
+                            onkeydown="handleKeyDown(event)"
+                        ></textarea>
+                    </div>
+                    <button class="send-btn" id="send-btn" onclick="sendMessage()">发送</button>
+                </div>
+
+                <div class="quick-commands">
+                    <span style="color: var(--text-muted); font-size: 0.75rem; margin-right: 4px;">快捷:</span>
+                    <button class="quick-cmd" onclick="sendQuickCommand('分析这个代码')">分析代码</button>
+                    <button class="quick-cmd" onclick="sendQuickCommand('帮我写一个排序算法')">写排序算法</button>
+                    <button class="quick-cmd" onclick="sendQuickCommand('修复这个bug')">修复bug</button>
+                </div>
+            </section>
+
+            <aside class="context-panel">
+                <div class="panel-section">
+                    <div class="panel-header">
+                        🧠 记忆状态
+                        <span id="memory-status" class="session-badge">-</span>
+                    </div>
+                    <div class="panel-content" id="memory-info">
+                        加载中...
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="panel-header">
+                        🔍 RAG 检索
+                        <span id="rag-status" class="session-badge">-</span>
+                    </div>
+                    <div class="panel-content" id="rag-info">
+                        加载中...
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="panel-header">
+                        📋 当前任务
+                    </div>
+                    <div class="panel-content" id="task-info">
+                        无活动任务
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = 'session_' + Date.now();
+        let messageCount = 0;
+        const API_BASE = 'http://127.0.0.1:8000';
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            updateSessionInfo();
+            loadMemoryStatus();
+            loadRagStatus();
+        });
+
+        function updateSessionInfo() {
+            document.getElementById('session-id').textContent = sessionId.slice(0, 12) + '...';
+        }
+
+        function updateTurnCount() {
+            messageCount++;
+            document.getElementById('turn-count').textContent = messageCount + ' 条消息';
+        }
+
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            // Clear input
+            input.value = '';
+
+            // Add user message
+            addMessage('user', message);
+            updateTurnCount();
+
+            // Show typing indicator
+            document.getElementById('typing-indicator').classList.add('active');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        session_id: sessionId
+                    })
+                });
+
+                const data = await response.json();
+
+                document.getElementById('typing-indicator').classList.remove('active');
+
+                if (data.response) {
+                    addMessage('assistant', data.response);
+                    updateTurnCount();
+                }
+
+                if (data.error) {
+                    addMessage('system', '错误: ' + data.error);
+                }
+
+                // Update context panels
+                if (data.context) {
+                    updateTaskInfo(data.context);
+                }
+
+            } catch (error) {
+                document.getElementById('typing-indicator').classList.remove('active');
+                addMessage('system', '连接失败: ' + error.message);
+            }
+        }
+
+        function sendQuickCommand(cmd) {
+            document.getElementById('message-input').value = cmd;
+            sendMessage();
+        }
+
+        function addMessage(role, content) {
+            const container = document.getElementById('messages');
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) emptyState.remove();
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+
+            const avatars = { user: '👤', assistant: '🤖', system: 'ℹ️' };
+            const roles = { user: '你', assistant: '助手', system: '系统' };
+
+            const now = new Date();
+            const time = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+            // Format content with code highlighting
+            const formattedContent = formatContent(content);
+
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <div class="message-avatar">${avatars[role]}</div>
+                    <span class="message-meta">${roles[role]} · ${time}</span>
+                </div>
+                <div class="message-content">${formattedContent}</div>
+            `;
+
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function formatContent(content) {
+            if (!content) return '';
+
+            // Escape HTML
+            let text = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            // Format code blocks
+            text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+                return `<pre><code class="language-${lang || 'python'}">${code.trim()}</code></pre>`;
+            });
+
+            // Format inline code
+            text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            return text;
+        }
+
+        async function clearHistory() {
+            if (!confirm('确定要清除对话历史吗？')) return;
+
+            try {
+                await fetch(`${API_BASE}/api/v1/sessions/${sessionId}`, {
+                    method: 'DELETE'
+                });
+            } catch (e) {}
+
+            document.getElementById('messages').innerHTML = `
+                <div class="empty-state" id="empty-state">
+                    <div class="empty-icon">🤖</div>
+                    <p>对话历史已清除</p>
+                </div>
+            `;
+            messageCount = 0;
+            updateTurnCount();
+            loadMemoryStatus();
+        }
+
+        async function loadHistory() {
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/chat/history/${sessionId}`);
+                const data = await response.json();
+
+                const container = document.getElementById('messages');
+                container.innerHTML = '';
+
+                if (data.history && data.history.length > 0) {
+                    data.history.forEach(turn => {
+                        addMessage(turn.role, turn.content);
+                    });
+                    messageCount = data.history.length;
+                    updateTurnCount();
+                } else {
+                    container.innerHTML = `
+                        <div class="empty-state" id="empty-state">
+                            <div class="empty-icon">📜</div>
+                            <p>暂无历史记录</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                alert('加载历史失败: ' + error.message);
+            }
+        }
+
+        async function loadMemoryStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/memory/status/${sessionId}`);
+                const data = await response.json();
+
+                const statusEl = document.getElementById('memory-status');
+                const infoEl = document.getElementById('memory-info');
+
+                statusEl.textContent = '在线';
+                statusEl.style.background = 'rgba(46, 201, 135, 0.15)';
+                statusEl.style.color = 'var(--success)';
+
+                infoEl.innerHTML = `
+                    <div class="context-item">
+                        <div class="context-label">会话ID</div>
+                        <div>${data.session_id || sessionId}</div>
+                    </div>
+                    <div class="context-item">
+                        <div class="context-label">对话轮次</div>
+                        <div>${data.conversation_turns || 0}</div>
+                    </div>
+                    <div class="context-item">
+                        <div class="context-label">任务状态</div>
+                        <div>${data.task_states || 0} 个</div>
+                    </div>
+                `;
+            } catch (error) {
+                document.getElementById('memory-status').textContent = '离线';
+                document.getElementById('memory-info').textContent = '无法连接';
+            }
+        }
+
+        async function loadRagStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/rag/stats`);
+                const data = await response.json();
+
+                const statusEl = document.getElementById('rag-status');
+                const infoEl = document.getElementById('rag-info');
+
+                statusEl.textContent = data.total_chunks ? '就绪' : '未索引';
+                statusEl.style.background = data.total_chunks ? 'rgba(46, 201, 135, 0.15)' : 'rgba(244, 168, 68, 0.15)';
+                statusEl.style.color = data.total_chunks ? 'var(--success)' : 'var(--warning)';
+
+                infoEl.innerHTML = `
+                    <div class="context-item">
+                        <div class="context-label">索引块数</div>
+                        <div>${data.total_chunks || 0}</div>
+                    </div>
+                    <div class="context-item">
+                        <div class="context-label">向量维度</div>
+                        <div>${data.embedding_dimension || 0}</div>
+                    </div>
+                `;
+            } catch (error) {
+                document.getElementById('rag-status').textContent = '离线';
+                document.getElementById('rag-info').textContent = '无法连接';
+            }
+        }
+
+        function updateTaskInfo(context) {
+            const taskInfo = context.task_info || {};
+            document.getElementById('task-info').innerHTML = `
+                <div class="context-item">
+                    <div class="context-label">状态</div>
+                    <div>${taskInfo.status || '空闲'}</div>
+                </div>
+                <div class="context-item">
+                    <div class="context-label">迭代</div>
+                    <div>${taskInfo.iterations || 0}</div>
+                </div>
+            `;
+        }
+
+        // Auto-resize textarea
+        document.getElementById('message-input').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+        });
+    </script>
+</body>
+</html>

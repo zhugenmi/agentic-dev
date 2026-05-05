@@ -171,6 +171,164 @@ def create_app():
             import traceback
             return jsonify({"error": str(e), "success": False, "output": ""}), 500
 
+    @app.route("/chat")
+    def chat():
+        """Multi-turn conversation page"""
+        return render_template("chat.html")
+
+    @app.route("/api/v1/chat", methods=["POST"])
+    def chat_message():
+        """Multi-turn chat API"""
+        try:
+            data = request.json
+            message = data.get("message", "")
+            session_id = data.get("session_id", f"session_{int(time.time()*1000)}")
+
+            if not message:
+                return jsonify({"error": "消息不能为空"}), 400
+
+            # Initialize memory manager
+            from src.memory.memory_manager import MemoryManager
+            memory = MemoryManager(session_id=session_id)
+
+            # Add user message to history
+            memory.add_user_message(message)
+
+            # Get context from memory and RAG
+            context_text = ""
+
+            # Try to get context from RAG
+            try:
+                from src.rag.code_rag import create_code_rag
+                rag = create_code_rag(repo_path=str(PROJECT_ROOT), use_local_embedding=True)
+                rag_context = rag.get_context_for_query(message, max_tokens=1000)
+                context_text += rag_context
+            except Exception as e:
+                print(f"RAG error: {e}")
+
+            # Get conversation context from memory
+            memory_context = memory.get_context_for_prompt(max_tokens=500)
+            context_text += memory_context
+
+            # Generate response using LLM
+            response_text = ""
+            try:
+                from src.llm.llm_model_client import get_llm_client
+                client = get_llm_client()
+
+                # Check if it's a task that needs full workflow
+                task_keywords = ["实现", "创建", "编写", "生成", "修复", "修改", "添加", "开发"]
+                needs_workflow = any(kw in message for kw in task_keywords)
+
+                if needs_workflow:
+                    # Use full workflow
+                    response_text = f"收到任务: {message}\n\n正在启动多Agent工作流处理..."
+                    # Note: For streaming response, you'd use a different approach
+                else:
+                    # Simple chat response
+                    prompt = f"{context_text}\n\n用户问题: {message}\n\n请简洁回答:"
+                    response = client.invoke(prompt)
+                    response_text = response.content if hasattr(response, 'content') else str(response)
+
+            except Exception as e:
+                response_text = f"LLM调用失败: {str(e)}"
+
+            # Add assistant response to memory
+            memory.add_assistant_message(response_text)
+
+            # Get current context info
+            task_state = memory.get_current_task("current")
+
+            return jsonify({
+                "response": response_text,
+                "session_id": session_id,
+                "context": {
+                    "conversation_turns": len(memory.get_conversation_history()),
+                    "task_info": task_state or {}
+                }
+            }), 200
+
+        except Exception as e:
+            import traceback
+            return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+    @app.route("/api/v1/chat/history/<session_id>", methods=["GET"])
+    def get_chat_history(session_id):
+        """Get conversation history"""
+        try:
+            from src.memory.memory_manager import MemoryManager
+            memory = MemoryManager(session_id=session_id)
+            history = memory.get_conversation_history(limit=50)
+
+            return jsonify({"history": history, "session_id": session_id}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/v1/memory/status/<session_id>", methods=["GET"])
+    def get_memory_status(session_id):
+        """Get memory status for a session"""
+        try:
+            from src.memory.memory_manager import MemoryManager
+            memory = MemoryManager(session_id=session_id)
+            summary = memory.get_summary()
+
+            st = summary.get("short_term", {})
+            return jsonify({
+                "session_id": session_id,
+                "conversation_turns": st.get("conversation_turns", 0),
+                "task_states": st.get("task_states", 0)
+            }), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/v1/memory/search", methods=["POST"])
+    def search_memory():
+        """Search memory for relevant context"""
+        try:
+            data = request.json
+            query = data.get("query", "")
+            session_id = data.get("session_id", "default")
+
+            from src.memory.memory_manager import MemoryManager
+            memory = MemoryManager(session_id=session_id)
+
+            # Get similar historical tasks
+            similar_tasks = memory.get_similar_historical_tasks(query, limit=5)
+
+            # Get project knowledge
+            knowledge = memory.get_project_knowledge()
+
+            return jsonify({
+                "similar_tasks": similar_tasks,
+                "project_knowledge": knowledge
+            }), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/v1/rag/stats", methods=["GET"])
+    def get_rag_stats():
+        """Get RAG index statistics"""
+        try:
+            from src.rag.code_rag import create_code_rag
+            rag = create_code_rag(repo_path=str(PROJECT_ROOT), use_local_embedding=True)
+            stats = rag.get_stats()
+
+            return jsonify(stats), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/v1/rag/build", methods=["POST"])
+    def build_rag_index():
+        """Build or rebuild RAG index"""
+        try:
+            from src.rag.code_rag import CodeRAG
+            rag = CodeRAG(repo_path=str(PROJECT_ROOT))
+            result = rag.build_index()
+
+            return jsonify(result), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/sessions/<session_id>", methods=["GET"])
     def get_session(session_id):
         from src.memory.session_manager import SessionManager

@@ -19,6 +19,7 @@ class WorkflowState(TypedDict):
     session_id: str
     task_plan: Optional[dict]
     repo_analysis: Optional[dict]
+    task_type: Optional[str]  # "modify_existing" | "create_new" | "mixed"
     generated_code: Optional[str]
     review_result: Optional[dict]
     fixed_code: Optional[str]
@@ -27,6 +28,7 @@ class WorkflowState(TypedDict):
     progress_callback: Optional[Any]
     iteration_count: int
     max_iterations: int
+    project_created: Optional[bool]  # Whether a new project was created
 
 
 def extract_code_from_response(response: str) -> str:
@@ -123,17 +125,32 @@ def repo_analysis_node(state: WorkflowState) -> WorkflowState:
         analyst = RepoAnalystAgent()
         repo_analysis = analyst.analyze(state["task_description"])
 
-        log.complete(f"分析完成，发现 {len(repo_analysis.get('main_files', []))} 个主要文件")
+        log.complete(f"分析完成，任务类型：{repo_analysis.get('task_type', 'modify_existing')}")
+
+        # Extract task type from analysis
+        task_type = repo_analysis.get("task_type", "modify_existing")
 
         if callback:
-            callback.add_step('repo_analysis', '🔍 RepoAnalyst Agent 已完成代码库分析', 'completed', {'analysis': repo_analysis})
+            if task_type == "create_new":
+                callback.add_step('repo_analysis', '🔍 RepoAnalyst Agent 检测到新项目创建任务', 'completed', {
+                    'analysis': repo_analysis,
+                    'task_type': task_type,
+                    'project_info': repo_analysis.get("project_name", "unknown")
+                })
+            else:
+                callback.add_step('repo_analysis', '🔍 RepoAnalyst Agent 已完成代码库分析', 'completed', {
+                    'analysis': repo_analysis,
+                    'task_type': task_type
+                })
 
         return {
             **state,
             "repo_analysis": repo_analysis,
+            "task_type": task_type,
+            "project_created": repo_analysis.get("scaffold_result", {}).get("success", False),
             "workflow_steps": state.get("workflow_steps", []) + [{
                 "step_name": "repo_analyst",
-                "description": "代码库分析完成",
+                "description": f"代码库分析完成，任务类型：{task_type}",
                 "status": "completed",
                 "output": repo_analysis
             }]

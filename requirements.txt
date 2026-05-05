@@ -13,3 +13,5 @@ flask-cors
 requests
 typing-extensions
 dataclasses-optional
+rich
+prompt_toolkit

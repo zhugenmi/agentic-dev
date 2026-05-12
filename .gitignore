@@ -48,11 +48,11 @@ __pycache__/
 # Local environment and runtime logs
 .env
 logs/
-.claude/
+.claude*
 .git/
 test*
 CLAUDE*
-docs/
+docs/*.md
 rag_index/
 memory_store/
 *.txt

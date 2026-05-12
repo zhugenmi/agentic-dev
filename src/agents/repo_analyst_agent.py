@@ -1,13 +1,13 @@
-"""Repository analysis agent"""
+"""Repository analysis agent with Tool Calling support"""
 
 import os
 import json
 import re
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from pathlib import Path
-import ast
+
+from .base_agent import BaseAgent
 from src.llm.llm_model_client import get_agent_llm_client
-from src.skills.skill_registry import skill_registry
 from src.utils.helpers import build_prompt, safe_parse
 from src.utils.prompts import (
     REPO_ANALYST_CLASSIFY_PROMPT,
@@ -23,22 +23,16 @@ class TaskType:
     MIXED = "mixed"
 
 
-class RepoAnalystAgent:
-    """Agent responsible for analyzing codebase context and locating relevant files"""
+class RepoAnalystAgent(BaseAgent):
+    """
+    Agent responsible for analyzing codebase context and locating relevant files.
+
+    Uses MCP-based tools for code search and project metadata collection.
+    """
 
     def __init__(self):
-        self.client = get_agent_llm_client("repo_analyst")
-        self.model = "repo_analyst"
-        self.project_root = Path(__file__).parent.parent.parent
-        self.skills = skill_registry.get_skills_for_agent("repo_analyst")
-
-    def use_skill(self, skill_name: str, *args, **kwargs) -> Any:
-        """Use a skill available to this agent"""
-        skill = skill_registry.get_skill(skill_name)
-        if skill:
-            return skill.execute(*args, **kwargs)
-        else:
-            raise ValueError(f"Skill '{skill_name}' not available")
+        super().__init__("repo_analyst")
+        self.project_root = Path(__file__).parent.parent.parent.absolute()
 
     def classify_task(self, task_description: str) -> Dict[str, Any]:
         """Classify the task type based on the description."""
@@ -48,12 +42,8 @@ class RepoAnalystAgent:
         )
         try:
             response = self.client.invoke(prompt)
-            if hasattr(response, 'content'):
-                content = response.content
-            elif hasattr(response, 'text'):
-                content = response.text
-            else:
-                content = str(response)
+            content = (response.content if hasattr(response, 'content') else
+                       response.text if hasattr(response, 'text') else str(response))
 
             try:
                 result = safe_parse(content)
@@ -75,15 +65,36 @@ class RepoAnalystAgent:
 
     def analyze(self, task_description: str) -> Dict[str, Any]:
         """Analyze the codebase to understand context and identify relevant files."""
+        # Use tool calling to gather project metadata
+        project_metadata = {}
+        try:
+            result = self.call_tool("collect_project_metadata", {})
+            if result.success:
+                metadata = result.output
+                if isinstance(metadata, str):
+                    try:
+                        import json
+                        project_metadata = json.loads(metadata)
+                    except json.JSONDecodeError:
+                        project_metadata = {"raw": metadata}
+                else:
+                    project_metadata = metadata
+        except Exception as e:
+            print(f"Metadata collection error: {e}")
+
         task_classification = self.classify_task(task_description)
         task_type = task_classification.get("task_type", TaskType.MODIFY_EXISTING)
 
         if task_type == TaskType.CREATE_NEW:
             return self._analyze_new_project_task(task_description, task_classification)
         elif task_type == TaskType.MODIFY_EXISTING:
-            return self._analyze_modification_task(task_description, task_classification)
+            return self._analyze_modification_task(
+                task_description, task_classification, project_metadata
+            )
         else:
-            return self._analyze_mixed_task(task_description, task_classification)
+            return self._analyze_mixed_task(
+                task_description, task_classification, project_metadata
+            )
 
     def _analyze_new_project_task(
         self,
@@ -100,12 +111,8 @@ class RepoAnalystAgent:
         )
         try:
             response = self.client.invoke(prompt)
-            if hasattr(response, 'content'):
-                content = response.content
-            elif hasattr(response, 'text'):
-                content = response.text
-            else:
-                content = str(response)
+            content = (response.content if hasattr(response, 'content') else
+                       response.text if hasattr(response, 'text') else str(response))
 
             try:
                 project_plan = safe_parse(content)
@@ -113,12 +120,6 @@ class RepoAnalystAgent:
                 project_plan = None
 
             if project_plan:
-                scaffold_result = self._create_project_scaffold(
-                    project_plan.get("project_name", "new_project"),
-                    project_plan.get("project_type", "python_package"),
-                    task_description
-                )
-                project_plan["scaffold_result"] = scaffold_result
                 project_plan["task_type"] = TaskType.CREATE_NEW
                 return project_plan
         except Exception as e:
@@ -139,21 +140,33 @@ class RepoAnalystAgent:
     def _analyze_modification_task(
         self,
         task_description: str,
-        task_classification: Dict[str, Any]
+        task_classification: Dict[str, Any],
+        project_metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Analyze a task that requires modifying existing code."""
+        # Use search_code_snippet tool to find relevant files
+        relevant_files = []
+        try:
+            search_result = self.call_tool(
+                "search_code_snippet",
+                {"query": task_description[:200], "language": "python", "max_results": 10}
+            )
+            if search_result.success:
+                results_data = search_result.output
+                if isinstance(results_data, str):
+                    import json
+                    data = json.loads(results_data) if results_data else {}
+                else:
+                    data = results_data
+                if isinstance(data, dict) and "results" in data:
+                    relevant_files = list(set(r.get("file", "") for r in data["results"] if r.get("file")))
+        except Exception as e:
+            print(f"Code search error: {e}")
+
         project_structure = self._analyze_project_structure()
         language_info = self._identify_language()
         dependencies = self._analyze_dependencies()
         test_info = self._find_test_information()
-
-        relevant_files = []
-        try:
-            search_result = self.use_skill("file_search", task_description, ".", "python")
-            if search_result.get("success"):
-                relevant_files = [r["path"] for r in search_result.get("results", [])[:10]]
-        except Exception as e:
-            print(f"File search error: {e}")
 
         prompt = build_prompt(
             REPO_ANALYST_MODIFICATION_PROMPT,
@@ -167,12 +180,8 @@ class RepoAnalystAgent:
 
         try:
             response = self.client.invoke(prompt)
-            if hasattr(response, 'content'):
-                content = response.content
-            elif hasattr(response, 'text'):
-                content = response.text
-            else:
-                content = str(response)
+            content = (response.content if hasattr(response, 'content') else
+                       response.text if hasattr(response, 'text') else str(response))
 
             try:
                 analysis = safe_parse(content)
@@ -187,12 +196,12 @@ class RepoAnalystAgent:
     def _analyze_mixed_task(
         self,
         task_description: str,
-        task_classification: Dict[str, Any]
+        task_classification: Dict[str, Any],
+        project_metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Analyze a task that requires both modification and creation."""
         modification_analysis = self._analyze_modification_task(
-            task_description,
-            task_classification
+            task_description, task_classification, project_metadata
         )
 
         new_files = task_classification.get("new_files_needed", [])
@@ -208,28 +217,6 @@ class RepoAnalystAgent:
         ]
 
         return modification_analysis
-
-    def _create_project_scaffold(
-        self,
-        project_name: str,
-        project_type: str,
-        task_description: str
-    ) -> Dict[str, Any]:
-        """Create project scaffold using the scaffold skill."""
-        try:
-            scaffold_skill = skill_registry.get_skill("project_scaffold")
-            if scaffold_skill:
-                return scaffold_skill.execute(
-                    project_name=project_name,
-                    project_type=project_type,
-                    base_directory=".",
-                    custom_config={"description": task_description}
-                )
-        except Exception as e:
-            print(f"Scaffold creation error: {e}")
-            return {"success": False, "error": str(e)}
-
-        return {"success": False, "error": "Scaffold skill not found"}
 
     def _analyze_project_structure(self) -> Dict[str, Any]:
         """Analyze the project structure"""
@@ -318,22 +305,6 @@ class RepoAnalystAgent:
             return "Spring"
         return "Java SE"
 
-    def _find_relevant_files(self, task_description: str, project_structure: Dict) -> List[str]:
-        """Find files relevant to the task"""
-        relevant_files = []
-
-        if os.path.exists("src"):
-            for root, dirs, files in os.walk("src"):
-                for file in files:
-                    if file.endswith(".py"):
-                        relevant_files.append(os.path.join(root, file))
-
-        for file in os.listdir("."):
-            if file.endswith(".py") and not file.startswith("__"):
-                relevant_files.append(file)
-
-        return relevant_files[:10]
-
     def _analyze_dependencies(self) -> List[str]:
         """Analyze project dependencies"""
         dependencies = []
@@ -360,13 +331,14 @@ class RepoAnalystAgent:
             if os.path.exists(test_dir):
                 for root, dirs, files in os.walk(test_dir):
                     for file in files:
-                        if file.endswith((".py", "_test.py", "test_*.py")):
+                        if file.endswith(".py"):
                             test_info["test_files"].append(os.path.join(root, file))
 
-        if any("pytest" in dep for dep in self._analyze_dependencies()):
+        deps = self._analyze_dependencies()
+        if any("pytest" in dep for dep in deps):
             test_info["test_framework"] = "pytest"
             test_info["test_commands"].append("pytest")
-        elif any("unittest" in dep for dep in self._analyze_dependencies()):
+        elif any("unittest" in dep for dep in deps):
             test_info["test_framework"] = "unittest"
             test_info["test_commands"].append("python -m unittest")
 

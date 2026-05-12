@@ -128,7 +128,7 @@ class CommandHandler:
         """Exit command"""
         return {
             "type": "exit",
-            "message": "再见！感谢使用 LangGraph 多Agent编程助手。"
+            "message": ""
         }
 
     def _cmd_clear(self, args: str, context: Dict[str, Any]) -> Dict[str, Any]:

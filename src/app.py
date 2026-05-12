@@ -280,7 +280,16 @@ def create_app():
 
             # Initialize memory manager
             from src.memory.memory_manager import MemoryManager
+            from src.memory.session_manager import SessionManager
             memory = MemoryManager(session_id=session_id)
+            session_manager = SessionManager()
+            session = session_manager.get_session(session_id)
+
+            # Check if this is the first message - generate summary
+            if session and not session.summary:
+                # Generate summary from first user message (truncate to 10 chars)
+                summary = message[:10] if len(message) > 10 else message
+                session_manager.update_summary(session_id, summary)
 
             # Add user message to history
             memory.add_user_message(message)
@@ -355,23 +364,40 @@ def create_app():
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/sessions", methods=["GET"])
+    def list_sessions():
+        """List all sessions"""
+        from src.memory.session_manager import SessionManager
+        session_manager = SessionManager()
+        sessions = session_manager.list_sessions()
+        return jsonify({"sessions": sessions}), 200
+
     @app.route("/api/v1/memory/status/<session_id>", methods=["GET"])
     def get_memory_status(session_id):
         """Get memory status for a session"""
         try:
             from src.memory.memory_manager import MemoryManager
+            from src.memory.session_manager import SessionManager
             memory = MemoryManager(session_id=session_id)
             summary = memory.get_summary()
 
             st = summary.get("short_term", {})
+
+            # Get session summary from SessionManager
+            session_manager = SessionManager()
+            session = session_manager.get_session(session_id)
+            session_summary = session.summary if session else ""
+
             return jsonify({
                 "session_id": session_id,
+                "summary": session_summary,
                 "conversation_turns": st.get("conversation_turns", 0),
                 "task_states": st.get("task_states", 0)
             }), 200
         except FileNotFoundError:
             return jsonify({
                 "session_id": session_id,
+                "summary": "",
                 "conversation_turns": 0,
                 "task_states": 0,
                 "message": "会话无记忆数据"

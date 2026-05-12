@@ -1,8 +1,9 @@
-"""Implementer agent for both code generation and fixing"""
+"""Implementer agent for both code generation and fixing with Tool Calling support"""
 
 import re
 from typing import Dict, Any, Optional
-from src.llm.llm_model_client import get_agent_llm_client
+
+from .base_agent import BaseAgent
 from src.utils.helpers import build_prompt
 from src.utils.prompts import (
     IMPLEMENTER_GENERATE_PROMPT,
@@ -39,12 +40,11 @@ def get_language_config(language: str) -> Dict[str, str]:
     return LANGUAGE_CONFIG.get(language.lower(), LANGUAGE_CONFIG["python"])
 
 
-class Implementer:
+class Implementer(BaseAgent):
     """Agent responsible for both generating and fixing code"""
 
     def __init__(self):
-        self.client = get_agent_llm_client("implementer")
-        self.model = "implementer"
+        super().__init__("implementer")
 
     def generate(
         self,
@@ -94,8 +94,6 @@ class Implementer:
                 return response.text
             elif isinstance(response, str):
                 return response
-            elif hasattr(response, 'lc_content') and response.lc_content:
-                return response.lc_content
             else:
                 content = getattr(response, 'content', None)
                 if content:
@@ -103,7 +101,7 @@ class Implementer:
                 return str(response)
 
         except Exception as e:
-            raise RuntimeError(f"代码生成失败: {str(e)}")
+            raise RuntimeError(f"代码生成失败：{str(e)}")
 
     def fix(self, original_code: str, review_result: Dict[str, Any]) -> str:
         """Fix code issues based on review feedback."""
@@ -133,5 +131,5 @@ class Implementer:
                 return code_match.group(1).strip()
             return code_response.strip() if code_response.strip() else original_code
 
-        except Exception as e:
+        except Exception:
             return original_code

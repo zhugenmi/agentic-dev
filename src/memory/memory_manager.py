@@ -404,7 +404,9 @@ class MemoryManager:
             "config": self._config
         }
 
-    def get_full_context_text(self) -> str:
+    # ==================== Summary ====================
+
+    def get_summary_text(self) -> str:
         """Get full context as text for LLM prompt"""
         context = self.assemble_context("", max_tokens=4000)
 

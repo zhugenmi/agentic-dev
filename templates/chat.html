@@ -37,7 +37,7 @@
         }
 
         .app-container {
-            max-width: 1200px;
+            /* max-width: 1200px; */
             margin: 0 auto;
             padding: 16px;
             height: 100vh;
@@ -427,7 +427,46 @@
         @media (max-width: 900px) {
             .context-panel { display: none; }
         }
-    </style>
+    
+.history-session-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    margin: 8px 0;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.history-session-item:hover {
+    background: var(--bg-hover);
+}
+.history-session-info {
+    flex: 1;
+}
+.history-session-summary {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+.history-session-meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.history-delete-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 16px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+.history-delete-btn:hover {
+    opacity: 1;
+}
+</style>
 </head>
 <body>
     <div class="app-container">
@@ -452,7 +491,7 @@
                         <span id="turn-count">0 条消息</span>
                     </div>
                     <div class="chat-actions">
-                        <button class="btn-icon" onclick="clearHistory()">🗑️ 清除</button>
+                        
                         <button class="btn-icon" onclick="loadHistory()">📜 历史</button>
                     </div>
                 </div>
@@ -682,18 +721,31 @@
 
         async function loadHistory() {
             try {
-                const response = await fetch(`${API_BASE}/api/v1/chat/history/${sessionId}`);
-                const data = await response.json();
-
+                // Load all sessions list
+                const listResponse = await fetch(`${API_BASE}/api/v1/sessions`);
+                const listData = await listResponse.json();
+                
                 const container = document.getElementById('messages');
                 container.innerHTML = '';
 
-                if (data.history && data.history.length > 0) {
-                    data.history.forEach(turn => {
-                        addMessage(turn.role, turn.content);
+                if (listData.sessions && listData.sessions.length > 0) {
+                    listData.sessions.forEach(sess => {
+                        const summary = sess.summary || sess.session_id.slice(0, 10);
+                        const time = new Date(sess.last_activity).toLocaleString('zh-CN');
+                        const msgCount = sess.message_count || 0;
+                        const sid = sess.session_id;
+                        
+                        const sessionItem = document.createElement('div');
+                        sessionItem.className = 'history-session-item';
+                        sessionItem.innerHTML = `
+                            <div class="history-session-info" onclick="switchToSession('${sid}')">
+                                <div class="history-session-summary">${summary}</div>
+                                <div class="history-session-meta">${time} - ${msgCount} 条消息</div>
+                            </div>
+                            <button class="history-delete-btn" onclick="deleteSession('${sid}')" title="删除会话">🗑️</button>
+                        `;
+                        container.appendChild(sessionItem);
                     });
-                    messageCount = data.history.length;
-                    updateTurnCount();
                 } else {
                     container.innerHTML = `
                         <div class="empty-state" id="empty-state">
@@ -704,6 +756,56 @@
                 }
             } catch (error) {
                 alert('加载历史失败: ' + error.message);
+            }
+        }
+        
+        async function switchToSession(sid) {
+            sessionId = sid;
+            localStorage.setItem('chat_session_id', sid);
+            
+            // Try to load summary from storage
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/memory/status/${sid}`);
+                const data = await response.json();
+                if (data.summary) {
+                    localStorage.setItem('chat_session_summary', data.summary);
+                    document.getElementById('session-id').textContent = data.summary;
+                }
+            } catch(e) {}
+            
+            loadHistoryMessages();
+            loadMemoryStatus();
+        }
+        
+        async function loadHistoryMessages() {
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/chat/history/${sessionId}`);
+                const data = await response.json();
+                const container = document.getElementById('messages');
+                container.innerHTML = '';
+                if (data.history && data.history.length > 0) {
+                    data.history.forEach(turn => {
+                        addMessage(turn.role, turn.content);
+                    });
+                    messageCount = data.history.length;
+                    updateTurnCount();
+                }
+            } catch (error) {
+                console.error('Load history messages error:', error);
+            }
+        }
+        
+        async function deleteSession(sid) {
+            if (!confirm('确定要删除该会话吗？')) return;
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/sessions/${sid}`, { method: 'DELETE' });
+                if (response.ok) {
+                    loadHistory();
+                } else {
+                    alert('删除失败');
+                }
+            } catch (error) {
+                alert('删除失败: ' + error.message);
             }
         }
 

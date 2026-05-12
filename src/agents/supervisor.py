@@ -139,11 +139,11 @@ class SupervisorAgent(BaseAgent):
         if language is None:
             language = self.select_language(task_description)
 
-        skills_info = self.format_skills_context()
+        tools_info = self.get_tool_descriptions()
 
         prompt = build_prompt(
             SUPERVISOR_PROMPT,
-            skills=skills_info,
+            skills=tools_info,
             task=task_description,
             language=language,
         )

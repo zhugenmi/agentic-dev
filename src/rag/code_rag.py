@@ -134,9 +134,11 @@ class CodeRAG:
             try:
                 self._index = faiss.read_index(str(self._index_file))
                 print(f"Loaded FAISS index with {self._index.ntotal} vectors")
+                self._embeddings = [self._index.reconstruct(i) for i in range(self._index.ntotal)]
             except Exception as e:
                 print(f"Failed to load FAISS index: {e}")
                 self._index = None
+                self._embeddings = []
 
         if self._chunks_file.exists():
             try:

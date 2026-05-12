@@ -54,6 +54,7 @@ class ShortTermMemory:
         self._task_states: Dict[str, Any] = {}
         self._context_items: deque = deque(maxlen=self.max_context)
         self._variables: Dict[str, Any] = {}
+        self._summary: str = ""  # 会话摘要
 
         # Storage backend
         self._redis_client = None
@@ -137,6 +138,8 @@ class ShortTermMemory:
                         self._task_states = data['tasks']
                     if 'variables' in data:
                         self._variables = data['variables']
+                    if 'summary' in data:
+                        self._summary = data['summary']
         except Exception as e:
             print(f"Failed to load from file: {e}")
 
@@ -171,6 +174,7 @@ class ShortTermMemory:
                 'conversation': list(self._conversation_history),
                 'tasks': self._task_states,
                 'variables': self._variables,
+                'summary': self._summary,
                 'updated_at': datetime.now().isoformat()
             }
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -377,6 +381,23 @@ class ShortTermMemory:
                     self._redis_client.delete(*keys)
             except Exception:
                 pass
+
+    def set_summary(self, summary: str):
+        """Set session summary text
+
+        Args:
+            summary: Session summary text (max 10 chars recommended)
+        """
+        self._summary = summary
+        self._save_data()
+
+    def get_session_summary(self) -> str:
+        """Get session summary text
+
+        Returns:
+            Session summary text
+        """
+        return self._summary
 
     def get_summary(self) -> Dict[str, Any]:
         """Get memory summary"""

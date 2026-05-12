@@ -2,6 +2,7 @@
 
 import re
 import time
+import uuid
 from typing import TypedDict, Annotated, Sequence, Optional, Callable, Any
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -12,12 +13,14 @@ from src.agents.implementer import Implementer
 from src.agents.reviewer import ReviewerAgent
 from src.agents.tester import Tester
 from src.utils.logger import AgentLogger, get_model_name_from_env, TaskTimer, set_task_id
+from src.tools import register_all_tools
 
 
 class WorkflowState(TypedDict):
     """State schema for the workflow"""
     task_description: str
     session_id: str
+    trace_id: str                    # Unique trace ID for this task execution
     task_plan: Optional[dict]
     repo_analysis: Optional[dict]
     task_type: Optional[str]  # "modify_existing" | "create_new" | "mixed"
@@ -26,6 +29,7 @@ class WorkflowState(TypedDict):
     review_result: Optional[dict]
     fixed_code: Optional[str]
     workflow_steps: list
+    tool_calls: list                 # Tool call log for this step
     error: Optional[str]
     progress_callback: Optional[Any]
     iteration_count: int
@@ -99,10 +103,18 @@ def plan_node(state: WorkflowState) -> WorkflowState:
         log.start("任务规划")
         set_task_id(task_id)
 
+        # Initialize trace_id and tool layer
+        if "trace_id" not in state or not state["trace_id"]:
+            state.setdefault("trace_id", str(uuid.uuid4())[:8])
+
+        # Initialize tools on first workflow invocation
+        register_all_tools()
+
         if callback:
             callback.add_step('plan', f'📋 Supervisor Agent 正在分析任务...', 'running')
 
         planner = SupervisorAgent()
+        planner.trace_id = state["trace_id"]
         task_plan = planner.plan(state["task_description"])
 
         log.complete(f"任务: {task_plan.get('task', '未知')}")
@@ -502,6 +514,16 @@ def format_workflow_result(state: WorkflowState) -> dict:
     """Format workflow result for response"""
     final_code = state.get("fixed_code") or state.get("generated_code") or ""
 
+    # Convert workflow_steps to JSON-serializable format
+    workflow_steps = []
+    for step in state.get("workflow_steps", []):
+        if hasattr(step, "to_dict"):
+            workflow_steps.append(step.to_dict())
+        elif isinstance(step, dict):
+            workflow_steps.append(step)
+        else:
+            workflow_steps.append(str(step))
+
     return {
         "task_description": state["task_description"],
         "task_plan": state.get("task_plan"),
@@ -510,7 +532,7 @@ def format_workflow_result(state: WorkflowState) -> dict:
         "review_result": state.get("review_result"),
         "test_result": state.get("test_result"),
         "final_code": final_code,
-        "workflow_steps": state.get("workflow_steps", []),
+        "workflow_steps": workflow_steps,
         "error": state.get("error"),
         "iterations": state.get("iteration_count", 0)
     }

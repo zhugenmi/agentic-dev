@@ -38,9 +38,12 @@
         }
 
         .app-container {
-            max-width: 1460px;
-            margin: 0 auto;
-            padding: 24px;
+            width: 100vw;
+            height: 100vh;
+            padding: 16px 24px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
 
         .app-header {
@@ -103,10 +106,11 @@
         }
 
         .main-layout {
+            flex: 1;
             display: grid;
             grid-template-columns: 3fr 7fr;
             gap: 14px;
-            align-items: stretch;
+            min-height: 0;
         }
 
         .panel {
@@ -114,7 +118,7 @@
             border-radius: 14px;
             background: rgba(16, 26, 46, 0.94);
             overflow: hidden;
-            min-height: 76vh;
+            min-height: 0;
             display: flex;
             flex-direction: column;
         }
@@ -531,7 +535,6 @@
                 <nav class="nav-tabs">
                     <a href="/" class="nav-tab active">任务执行</a>
                     <a href="/chat" class="nav-tab">多轮对话</a>
-                    <a href="/cli" class="nav-tab">CLI</a>
                 </nav>
             </h1>
             <p class="app-subtitle">Supervisor 规划 → Analyst 分析 → Implementer 生成 → Reviewer 审查 → Tester 测试，循环迭代直至通过。</p>

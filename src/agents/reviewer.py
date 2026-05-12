@@ -1,17 +1,17 @@
-"""Code review agent"""
+"""Code review agent with Tool Calling support"""
 
 from typing import Dict, Any
-from src.llm.llm_model_client import get_agent_llm_client
+
+from .base_agent import BaseAgent
 from src.utils.helpers import build_prompt, safe_parse
 from src.utils.prompts import REVIEWER_PROMPT
 
 
-class ReviewerAgent:
+class ReviewerAgent(BaseAgent):
     """Agent responsible for reviewing generated code"""
 
     def __init__(self):
-        self.client = get_agent_llm_client("reviewer")
-        self.model = "reviewer"
+        super().__init__("reviewer")
 
     def review(self, code: str, task_description: str) -> Dict[str, Any]:
         """Review the generated code for correctness and quality."""

@@ -1,21 +1,21 @@
-"""Tester agent for test generation and execution"""
+"""Tester agent for test generation and execution with Tool Calling support"""
 
 import subprocess
 import tempfile
 import os
 import time
 from typing import Dict, Any, Optional
-from src.llm.llm_model_client import get_agent_llm_client
+
+from .base_agent import BaseAgent
 from src.utils.helpers import build_prompt
 from src.utils.prompts import TESTER_PROMPT
 
 
-class Tester:
+class Tester(BaseAgent):
     """Agent responsible for generating tests and running them"""
 
     def __init__(self):
-        self.client = get_agent_llm_client("tester")
-        self.model = "bigmodel"
+        super().__init__("tester")
 
     def generate_tests(self, code: str, task_description: str) -> Dict[str, Any]:
         """Generate test cases for the given code."""
@@ -83,7 +83,7 @@ class Tester:
             }
 
     def run_tests(self, code: str, test_code: str = None) -> Dict[str, Any]:
-        """Run tests on the given code."""
+        """Run tests on the given code using the execute_command tool."""
         original_cwd = os.getcwd()
         try:
             if not test_code or not test_code.strip():
@@ -112,27 +112,36 @@ class Tester:
                 with open(test_file, 'w', encoding='utf-8') as f:
                     f.write(test_code)
 
-                start = time.time()
-                result = subprocess.run(
-                    ["python", "-m", "pytest", "test_main.py", "-v", "--tb=short"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                    cwd=temp_dir
+                # Use execute_command tool instead of direct subprocess
+                result = self.call_tool(
+                    "execute_command",
+                    {
+                        "command": "python -m pytest test_main.py -v --tb=short",
+                        "working_dir": temp_dir,
+                        "timeout": 30,
+                    },
                 )
-                duration = time.time() - start
 
-                output = result.stdout + result.stderr
-                passed, failed, error_info = self._parse_pytest_output(output, result.returncode)
+                if result.success:
+                    output = result.output
+                    raw = output.get("stdout", "") + output.get("stderr", "") if isinstance(output, dict) else str(output)
+                    returncode = output.get("returncode", 0) if isinstance(output, dict) else 0
+                    duration = output.get("duration", 0) if isinstance(output, dict) else 0
+                else:
+                    raw = result.error or ""
+                    returncode = -1
+                    duration = 0
+
+                passed, failed, error_info = self._parse_pytest_output(raw, returncode)
 
                 return {
                     "success": not error_info,
                     "passed": passed,
                     "failed": failed,
                     "total": passed + failed,
-                    "output": output,
-                    "error": output if error_info else None,
-                    "duration": round(duration, 3),
+                    "output": raw,
+                    "error": raw if error_info else None,
+                    "duration": round(duration, 3) if isinstance(duration, (int, float)) else 0,
                 }
 
         except subprocess.TimeoutExpired:
@@ -167,18 +176,15 @@ class Tester:
         failed = 0
         error_info = False
 
-        # Parse the summary line: "3 passed, 1 failed in 5.2s"
         import re
         summary_match = re.search(r'(\d+)\s+passed.*?(\d+)\s+failed', output)
         if summary_match:
             passed = int(summary_match.group(1))
             failed = int(summary_match.group(2))
         else:
-            # Fallback: count per-test results
             passed = len([line for line in output.split('\n') if ' PASSED' in line])
             failed = len([line for line in output.split('\n') if ' FAILED' in line])
 
-        # Check for collection errors (no tests collected, syntax errors, etc.)
         lower_output = output.lower()
         error_patterns = ['error collecting', 'no tests ran', 'importerror',
                           'syntax error', 'fixture']
@@ -191,13 +197,11 @@ class Tester:
 
     def _extract_class_name(self, code: str) -> str:
         """Extract main class name from code"""
-        import re
         match = re.search(r'class\s+(\w+)', code)
         return match.group(1) if match else "Code"
 
     def _get_function_name(self, code: str) -> str:
         """Extract main function name from code"""
-        import re
         matches = re.findall(r'def\s+(\w+)', code)
         return matches[0] if matches else "main"
 
